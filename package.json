@@ -9,9 +9,19 @@
   "author": "db~@NC",
   "license": "ISC",
   "dependencies": {
+    "@google-cloud/text-to-speech": "^3.2.7",
+    "cheerio": "^1.0.0-rc.10",
+    "fs": "^0.0.1-security",
+    "google-tts-api": "^2.0.2",
     "images-scraper": "^6.3.0",
+    "path": "^0.12.7",
+    "puppeteer": "^10.2.0",
+    "puppeteer-core": "^10.2.0",
     "request": "^2.88.2",
+    "text-to-speech-js": "^1.1.10",
     "ws": "^7.5.3",
+    "yarn": "^1.22.11",
+    "youtube-mp3-converter": "^1.0.3",
     "youtube-search-without-api-key": "^1.0.6"
   },
   "devDependencies": {

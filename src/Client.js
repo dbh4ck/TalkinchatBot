@@ -44,11 +44,24 @@ exports.__esModule = true;
 exports.Client = void 0;
 var WebSocket = require("ws");
 var yt = require("youtube-search-without-api-key");
-var BOT_ID = "Bot Id"; // change this
-var BOT_PASSWORD = "Bot Pwd"; // change this
+var Scraper = require('images-scraper');
+var request = require('request');
+var cheerio = require('cheerio');
+var fs = require('fs');
+var googleTTS = require('google-tts-api');
+var google = new Scraper({
+    puppeteer: {
+        headless: false
+    }
+});
+var puppeteer = require('puppeteer');
+var BOT_ID = "BOT ID"; // change this
+var BOT_PASSWORD = "BOT PWD"; // change this
 var HANDLER_LOGIN = "login";
 var HANDLER_LOGIN_EVENT = "login_event";
 var HANDLER_ROOM_JOIN = "room_join";
+var HANDLER_ROOM_LEAVE = "room_leave";
+var HANDLER_CHAT_MESSAGE = "chat_message";
 var HANDLER_ROOM_EVENT = "room_event";
 var HANDLER_ROOM_ADMIN = "room_admin";
 var HANDLER_ROOM_MESSAGE = "room_message";
@@ -60,6 +73,7 @@ var TARGET_ROLE_NONE = "none";
 var TARGET_ROLE_ADMIN = "admin";
 var TARGET_ROLE_OWNER = "owner";
 var CHANGE_ROLE = "change_role";
+var MSG_ID = "message_id";
 var ROLE_CHANGED = "role_changed";
 var emojis = ["😀", "☑️", "😁", "😊", "😍", "😘", "🤪", "🤭", "🤥", "🥵", "🥳", "😨", "😤", "🤬",
     "☠", "👻", "🤡", "💌", "💤", "👍"];
@@ -79,8 +93,11 @@ var Client = /** @class */ (function () {
         this.isOnlyPhoto = false;
         // Bot Master ID
         this.botMasterId = "docker"; // change this ==> eg. docker
-        this.usersMap = new Map();
+        this.wcSettingsMap = new Map();
+        this.spinSettingsMap = new Map();
         this.user_list = [];
+        this.isWcGreetings = true;
+        this.isSpin = false;
         // you can add more list of spins
         this.listEmojis = [
             'You got 🐠😾', 'You are sweet 😍', 'Goodnight 🌠°', 'Take 🍔🍔', 'Are you old enough to vote?', 'You got 🍪', 'You shattap 😡🎃',
@@ -150,12 +167,18 @@ var Client = /** @class */ (function () {
                 var group = parsedData.name;
                 var role = parsedData.role;
                 var welcomeStr = "Welcome: " + user + " 😜";
-                //this.processGroupChatMessage(this.userName, welcomeStr, group);
-                this.sendRoomMsg(group, welcomeStr);
+                if (this.wcSettingsMap.get(group) == true) {
+                    this.sendRoomMsg(group, welcomeStr);
+                }
             }
             if (parsedData.type == "you_joined") {
-                //
-                setInterval(function () {
+                var room_1 = parsedData.name;
+                this.wcSettingsMap.set(room_1, this.isWcGreetings);
+                this.spinSettingsMap.set(room_1, this.isSpin);
+                if (this.timeoutInterval != undefined) {
+                    clearInterval(this.timeoutInterval);
+                }
+                this.timeoutInterval = setInterval(function () {
                     if (_this.webSocket != null && _this.webSocket.readyState == WebSocket.OPEN) {
                         var groupMsgPayload = { handler: HANDLER_ROOM_MESSAGE, id: _this.keyGen(20, true), room: _this.roomName, type: MESSAGE_TYPE.TEXT, url: "", body: get_random(emojis), length: "" };
                         _this.webSocket.send(JSON.stringify(groupMsgPayload));
@@ -163,14 +186,14 @@ var Client = /** @class */ (function () {
                 }, 120000);
             }
             if (parsedData.type == "room_unsufficient_previlige") {
-                var room_1 = parsedData.name;
-                this.sendRoomMsg(room_1, "❌ Insufficient Privileges.");
+                var room_2 = parsedData.name;
+                this.sendRoomMsg(room_2, "❌ Insufficient Privileges.");
             }
             if (parsedData.type == ROLE_CHANGED) {
-                var room_2 = parsedData.name;
+                var room_3 = parsedData.name;
                 var userName_1 = parsedData.t_username;
                 var newRole = parsedData.new_role;
-                this.sendRoomMsg(room_2, "✅ " + userName_1 + " is now " + newRole + ".");
+                this.sendRoomMsg(room_3, "✅ " + userName_1 + " is now " + newRole + ".");
             }
         }
         if (parsedData.handler == HANDLER_PROFILE_OTHER) {
@@ -294,14 +317,15 @@ var Client = /** @class */ (function () {
     };
     Client.prototype.processGroupChatMessage = function (from, message, room) {
         return __awaiter(this, void 0, void 0, function () {
-            var search, videos, msg, random, search, targetId, str, targetId, str, targetId, str, targetId, str, targetId, kickPayload, str, targetId, str, targetId, str, targetId, str, targetId, roomUsersPayload, targetIndex;
+            var search, videos, msg, random, search, targetId, str, targetId, str, targetId, str, targetId, str, targetId, kickPayload, str, targetId, str, targetId, str, targetId, str, targetId, roomUsersPayload, targetIndex, img_query_1, audio_query, url;
+            var _this = this;
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
                         console.log(from + " : " + message);
                         if (from == this.userName) {
                         }
-                        if (!(message.indexOf('!yt ') === 0)) return [3 /*break*/, 2];
+                        if (!message.toLowerCase().startsWith('!yt ')) return [3 /*break*/, 2];
                         search = message.substring(4).toString();
                         console.log('Fetching YT for: "' + search.replace(/\s/g, "") + '"');
                         return [4 /*yield*/, yt.search(search.replace(/\s/g, ""))];
@@ -319,16 +343,22 @@ var Client = /** @class */ (function () {
                                 "➩ admin - a ID" + "\n" +
                                 "➩ member - m ID" + "\n" +
                                 "➩ none - n ID" + "\n" +
-                                "➩ room users - .l";
-                            this.sendRoomMsg(room, msg);
+                                "➩ room users - .l" + "\n" +
+                                "➩ text2Speech - !say message" + "\n" +
+                                "➩ search images - !img keyword";
+                            if (from == this.botMasterId) {
+                                this.sendRoomMsg(room, msg);
+                            }
                         }
                         // SPIN 
                         if (message.toLowerCase() == '.s' || message.toLowerCase() == 'spin') {
                             random = Math.floor(Math.random() * this.listEmojis.length);
-                            this.sendRoomMsg(room, from + ": " + this.listEmojis[random]);
+                            if (this.spinSettingsMap.get(room) == true) {
+                                this.sendRoomMsg(room, from + ": " + this.listEmojis[random]);
+                            }
                         }
                         // Profile
-                        if (message.indexOf('!pro ') === 0) {
+                        if (message.toLowerCase().startsWith('!pro ')) {
                             search = message.substring(5).toString();
                             targetId = search.replace(/\s/g, "");
                             this.tempRoom = room;
@@ -338,7 +368,7 @@ var Client = /** @class */ (function () {
                             }
                         }
                         // Join Group
-                        if (message.indexOf('!join ') === 0) {
+                        if (message.toLowerCase().startsWith('!join ')) {
                             str = message.substring(6).toString();
                             targetId = str.replace(/\s/g, "");
                             if (from == this.botMasterId) {
@@ -346,7 +376,7 @@ var Client = /** @class */ (function () {
                             }
                         }
                         // Avatar Pic
-                        if (message.indexOf('!avi ') === 0) {
+                        if (message.toLowerCase().startsWith('!avi ')) {
                             str = message.substring(5).toString();
                             targetId = str.replace(/\s/g, "");
                             this.tempRoom = room;
@@ -357,7 +387,7 @@ var Client = /** @class */ (function () {
                             //this.sendRoomMsg("american", "", "test.jpg");
                         }
                         // Member User
-                        if (message.indexOf('m ') === 0) {
+                        if (message.toLowerCase().startsWith('m ')) {
                             str = message.substring(2).toString();
                             targetId = str.replace(/\s/g, "");
                             this.tempRoom = room;
@@ -366,7 +396,7 @@ var Client = /** @class */ (function () {
                             }
                         }
                         // Kick User
-                        if (message.indexOf('k ') === 0) {
+                        if (message.toLowerCase().startsWith('k ')) {
                             str = message.substring(2).toString();
                             targetId = str.replace(/\s/g, "");
                             this.tempRoom = room;
@@ -377,7 +407,7 @@ var Client = /** @class */ (function () {
                                 }
                             }
                         }
-                        if (message.indexOf('b ') === 0) {
+                        if (message.toLowerCase().startsWith('b ')) {
                             str = message.substring(2).toString();
                             targetId = str.replace(/\s/g, "");
                             this.tempRoom = room;
@@ -385,7 +415,7 @@ var Client = /** @class */ (function () {
                                 this.banUser(targetId, room);
                             }
                         }
-                        if (message.indexOf('n ') === 0) {
+                        if (message.toLowerCase().startsWith('n ')) {
                             str = message.substring(2).toString();
                             targetId = str.replace(/\s/g, "");
                             this.tempRoom = room;
@@ -393,7 +423,7 @@ var Client = /** @class */ (function () {
                                 this.grantNone(targetId, room);
                             }
                         }
-                        if (message.indexOf('a ') === 0) {
+                        if (message.toLowerCase().startsWith('a ')) {
                             str = message.substring(2).toString();
                             targetId = str.replace(/\s/g, "");
                             this.tempRoom = room;
@@ -401,7 +431,7 @@ var Client = /** @class */ (function () {
                                 this.grantAdmin(targetId, room);
                             }
                         }
-                        if (message.indexOf('o ') === 0) {
+                        if (message.toLowerCase().startsWith('o ')) {
                             str = message.substring(2).toString();
                             targetId = str.replace(/\s/g, "");
                             this.tempRoom = room;
@@ -451,10 +481,94 @@ var Client = /** @class */ (function () {
                                 }
                             }
                         }
+                        if (message.toLowerCase().startsWith("wc ")) {
+                            if (from == this.botMasterId) {
+                                this.handleUserGreetings(message, room);
+                            }
+                        }
+                        if (message.toLowerCase().startsWith("spin ")) {
+                            if (from == this.botMasterId) {
+                                this.handleSpin(message, room);
+                            }
+                        }
+                        if (message.toLowerCase().startsWith("!img ")) {
+                            img_query_1 = message.substring(5);
+                            (function () { return __awaiter(_this, void 0, void 0, function () {
+                                var links, results;
+                                return __generator(this, function (_a) {
+                                    switch (_a.label) {
+                                        case 0:
+                                            links = [];
+                                            return [4 /*yield*/, google.scrape(img_query_1.trim(), 20)];
+                                        case 1:
+                                            results = _a.sent();
+                                            console.log('results', results);
+                                            results.forEach(function (element) {
+                                                links.push(element.url);
+                                            });
+                                            this.sendRoomMsg(room, "", get_random(links));
+                                            return [2 /*return*/];
+                                    }
+                                });
+                            }); })();
+                        }
+                        if (message.toLowerCase().startsWith("!say ")) {
+                            audio_query = message.substring(5);
+                            url = googleTTS.getAudioUrl(audio_query, {
+                                lang: 'en',
+                                slow: false,
+                                host: 'https://translate.google.com'
+                            });
+                            this.sendRoomMsg(room, "", "", url);
+                            console.log(url);
+                        }
                         return [2 /*return*/];
                 }
             });
         });
+    };
+    Client.prototype.handleSpin = function (msg, roomName) {
+        var str = msg.substring(5).toString();
+        var isOnOff = str.replace(/\s/g, "");
+        if (isOnOff.toLowerCase() == "on") {
+            if (this.isSpin == true) {
+                this.sendRoomMsg(roomName, "SPIN Already Enabled❗");
+                return;
+            }
+            this.isSpin = true;
+            this.sendRoomMsg(roomName, "SPIN Enabled ✅");
+        }
+        else if (isOnOff.toLowerCase() == "off") {
+            if (this.isSpin == false) {
+                this.sendRoomMsg(roomName, "SPIN Already Disabled❗");
+                return;
+            }
+            this.isSpin = false;
+            this.sendRoomMsg(roomName, "SPIN Disbaled ✅");
+        }
+        this.spinSettingsMap.set(roomName, this.isSpin);
+    };
+    Client.prototype.handleUserGreetings = function (msg, roomName) {
+        var str = msg.substring(3).toString();
+        var isOnOff = str.replace(/\s/g, "");
+        if (isOnOff.toLowerCase() == "on") {
+            if (this.isWcGreetings == true) {
+                this.sendRoomMsg(roomName, "Greetings Already Enabled❗");
+                return;
+            }
+            this.isWcGreetings = true;
+            //this.wcSettingsMap.set(roomName, this.isWcGreetings);
+            this.sendRoomMsg(roomName, "Greetings Enabled ✅");
+        }
+        else if (isOnOff.toLowerCase() == "off") {
+            if (this.isWcGreetings == false) {
+                this.sendRoomMsg(roomName, "Greetings Already Disabled❗");
+                return;
+            }
+            this.isWcGreetings = false;
+            this.sendRoomMsg(roomName, "Greetings Disbaled ✅");
+        }
+        this.wcSettingsMap.set(roomName, this.isWcGreetings);
     };
     Client.prototype.fetchUserProfile = function (targetId, room) {
         var userSearchPayload = { handler: HANDLER_PROFILE_OTHER, id: this.keyGen(20, true), type: targetId };
@@ -496,10 +610,13 @@ var Client = /** @class */ (function () {
         info += "30"; // Sdk Api
         return info;
     };
-    Client.prototype.sendRoomMsg = function (roomName, msg, photoUrl) {
+    Client.prototype.sendRoomMsg = function (roomName, msg, photoUrl, audioUrl) {
         var groupMsgPayload = null;
         if (photoUrl) {
             groupMsgPayload = { handler: HANDLER_ROOM_MESSAGE, id: this.keyGen(20, true), room: roomName, type: MESSAGE_TYPE.IMAGE, url: photoUrl, body: "", length: "" };
+        }
+        else if (audioUrl) {
+            groupMsgPayload = { handler: HANDLER_ROOM_MESSAGE, id: this.keyGen(20, true), room: roomName, type: "audio", url: audioUrl, body: "", length: "" };
         }
         else {
             groupMsgPayload = { handler: HANDLER_ROOM_MESSAGE, id: this.keyGen(20, true), room: roomName, type: MESSAGE_TYPE.TEXT, url: "", body: msg, length: "" };
@@ -508,20 +625,23 @@ var Client = /** @class */ (function () {
             this.webSocket.send(JSON.stringify(groupMsgPayload));
         }
     };
+    Client.prototype.leaveGroup = function (roomName) {
+        var leaveGroupPayload = { handler: HANDLER_ROOM_LEAVE, name: roomName, id: this.keyGen(20, true) };
+        if (this.webSocket != null && this.webSocket.readyState == WebSocket.OPEN) {
+            this.webSocket.send(JSON.stringify(leaveGroupPayload));
+        }
+    };
+    Client.prototype.sendPvtMsg = function (targetId, msgBody) {
+        var msgPayload = { handler: HANDLER_CHAT_MESSAGE, id: this.keyGen(20, true), to: targetId, type: MESSAGE_TYPE.TEXT, body: msgBody };
+        if (this.webSocket != null && this.webSocket.readyState == WebSocket.OPEN) {
+            this.webSocket.send(JSON.stringify(msgPayload));
+        }
+    };
     return Client;
 }());
 exports.Client = Client;
 function get_random(list) {
     return list[Math.floor((Math.random() * list.length))];
 }
-function chunkSubstr(str, size) {
-    var numChunks = Math.ceil(str.length / size);
-    var chunks = new Array(numChunks);
-    for (var i = 0, o = 0; i < numChunks; ++i, o += size) {
-        chunks[i] = str.substr(o, size);
-    }
-    //console.log(chunks);
-    return chunks;
-}
 // Created by docker aka db~@NC - B'cuz we share :P
-new Client(BOT_ID, BOT_PASSWORD);
+var client = new Client(BOT_ID, BOT_PASSWORD);

@@ -1,12 +1,26 @@
 import WebSocket =  require('ws');
 import * as yt from 'youtube-search-without-api-key';
+var Scraper = require('images-scraper');
+const request = require('request');
+const cheerio = require('cheerio');
+const fs = require('fs');
+const googleTTS = require('google-tts-api');
 
-const BOT_ID: string = "Bot Id";        // change this
-const BOT_PASSWORD: string = "Bot Pwd";     // change this
+const google = new Scraper({
+    puppeteer: {
+      headless: false,
+    },
+  });
 
+const puppeteer = require('puppeteer'); 
+
+const BOT_ID: string = "BOT ID";        // change this
+const BOT_PASSWORD: string = "BOT PWD";     // change this
 const HANDLER_LOGIN: string = "login";
 const HANDLER_LOGIN_EVENT: string = "login_event";
 const HANDLER_ROOM_JOIN: string = "room_join";
+const HANDLER_ROOM_LEAVE: string = "room_leave";
+const HANDLER_CHAT_MESSAGE: string = "chat_message";
 const HANDLER_ROOM_EVENT: string = "room_event";
 const HANDLER_ROOM_ADMIN: string = "room_admin";
 const HANDLER_ROOM_MESSAGE: string = "room_message";
@@ -18,8 +32,8 @@ const TARGET_ROLE_NONE: string = "none";
 const TARGET_ROLE_ADMIN: string = "admin";
 const TARGET_ROLE_OWNER: string = "owner";
 const CHANGE_ROLE: string = "change_role";
+const MSG_ID: string = "message_id";
 const ROLE_CHANGED: string = "role_changed";
-
 const emojis = ["😀", "☑️", "😁", "😊", "😍", "😘", "🤪", "🤭", "🤥", "🥵", "🥳","😨", "😤", "🤬",
 "☠", "👻", "🤡", "💌", "💤", "👍"];
 
@@ -38,9 +52,12 @@ export class Client{
     public isOnlyPhoto: boolean = false;
     // Bot Master ID
     public botMasterId: string = "docker";      // change this ==> eg. docker
-    public usersMap = new Map();
+    public wcSettingsMap = new Map();
+    public spinSettingsMap = new Map();
     public user_list = [];
-    
+    public isWcGreetings: boolean = true;
+    public isSpin: boolean = false; 
+    public timeoutInterval;
     // you can add more list of spins
     public listEmojis = [
         'You got 🐠😾', 'You are sweet 😍', 'Goodnight 🌠°', 'Take 🍔🍔', 'Are you old enough to vote?', 'You got 🍪','You shattap 😡🎃',
@@ -112,18 +129,30 @@ export class Client{
                 var room = parsedData.room;
                 this.processGroupChatMessage(from, message, room);
             }
+
             if(parsedData.type == "user_joined"){
                 var user = parsedData.username;
                 var group = parsedData.name;
                 var role = parsedData.role;
 
                 var welcomeStr = "Welcome: " + user + " 😜";
-                //this.processGroupChatMessage(this.userName, welcomeStr, group);
-                this.sendRoomMsg(group, welcomeStr);
+                
+                if(this.wcSettingsMap.get(group) == true){
+                    this.sendRoomMsg(group, welcomeStr);
+                }
             }
+            
             if(parsedData.type == "you_joined"){
-                //
-                setInterval(() => {    
+                let room = parsedData.name;
+
+                this.wcSettingsMap.set(room, this.isWcGreetings);
+                this.spinSettingsMap.set(room, this.isSpin);
+
+                if(this.timeoutInterval != undefined){
+                    clearInterval(this.timeoutInterval);
+                }
+                
+                this.timeoutInterval = setInterval(() => {    
                     if(this.webSocket != null && this.webSocket.readyState == WebSocket.OPEN){
                         let groupMsgPayload = {handler: HANDLER_ROOM_MESSAGE, id: this.keyGen(20, true), room: this.roomName, type: MESSAGE_TYPE.TEXT, url: "", body: get_random(emojis), length: ""};
                         this.webSocket.send(JSON.stringify(groupMsgPayload))
@@ -271,8 +300,9 @@ export class Client{
         if(from == this.userName){
             
         }
+
         // Youtube Scrapping :D
-        if(message.indexOf('!yt ') === 0){
+        if(message.toLowerCase().startsWith('!yt ')){
             var search = message.substring(4).toString();
             console.log('Fetching YT for: "' + search.replace(/\s/g, "") + '"');
 
@@ -289,18 +319,24 @@ export class Client{
                         "➩ admin - a ID" + "\n" +
                         "➩ member - m ID" + "\n" +
                         "➩ none - n ID" + "\n" +
-                        "➩ room users - .l";
-            this.sendRoomMsg(room, msg);
+                        "➩ room users - .l"+ "\n" +
+                        "➩ text2Speech - !say message"+ "\n" +
+                        "➩ search images - !img keyword"; 
+            if(from == this.botMasterId){
+                this.sendRoomMsg(room, msg);
+            }
         }
 
         // SPIN 
         if (message.toLowerCase() == '.s' || message.toLowerCase() == 'spin' ){
             const random = Math.floor(Math.random() * this.listEmojis.length);
-            this.sendRoomMsg(room, from + ": " + this.listEmojis[random]);
+            if(this.spinSettingsMap.get(room) == true){
+                this.sendRoomMsg(room, from + ": " + this.listEmojis[random]);
+            }
         }
 
         // Profile
-        if(message.indexOf('!pro ') === 0){
+        if(message.toLowerCase().startsWith('!pro ')){
             var search = message.substring(5).toString();
             var targetId = search.replace(/\s/g, "");
             this.tempRoom = room;
@@ -311,7 +347,7 @@ export class Client{
         }
 
         // Join Group
-        if(message.indexOf('!join ') === 0){
+        if(message.toLowerCase().startsWith('!join ')){
             var str = message.substring(6).toString();
             var targetId = str.replace(/\s/g, "");
             
@@ -321,7 +357,7 @@ export class Client{
         }
 
         // Avatar Pic
-        if(message.indexOf('!avi ') === 0){
+        if(message.toLowerCase().startsWith('!avi ')){
             var str = message.substring(5).toString();
             var targetId = str.replace(/\s/g, "");
             this.tempRoom = room;
@@ -334,7 +370,7 @@ export class Client{
         }
 
         // Member User
-        if(message.indexOf('m ') === 0){
+        if(message.toLowerCase().startsWith('m ')){
             var str = message.substring(2).toString();
             var targetId = str.replace(/\s/g, "");
             this.tempRoom = room;
@@ -345,7 +381,7 @@ export class Client{
         }
 
         // Kick User
-        if(message.indexOf('k ') === 0){
+        if(message.toLowerCase().startsWith('k ')){
             var str = message.substring(2).toString();
             var targetId = str.replace(/\s/g, "");
             this.tempRoom = room;
@@ -358,7 +394,7 @@ export class Client{
             }
         }
 
-        if(message.indexOf('b ') === 0){
+        if(message.toLowerCase().startsWith('b ')){
             var str = message.substring(2).toString();
             var targetId = str.replace(/\s/g, "");
             this.tempRoom = room;
@@ -368,7 +404,7 @@ export class Client{
             }
         }
 
-        if(message.indexOf('n ') === 0){
+        if(message.toLowerCase().startsWith('n ')){
             var str = message.substring(2).toString();
             var targetId = str.replace(/\s/g, "");
             this.tempRoom = room;
@@ -378,7 +414,7 @@ export class Client{
             }
         }
 
-        if(message.indexOf('a ') === 0){
+        if(message.toLowerCase().startsWith('a ')){
             var str = message.substring(2).toString();
             var targetId = str.replace(/\s/g, "");
             this.tempRoom = room;
@@ -388,7 +424,7 @@ export class Client{
             }
         }
 
-        if(message.indexOf('o ') === 0){
+        if(message.toLowerCase().startsWith('o ')){
             var str = message.substring(2).toString();
             var targetId = str.replace(/\s/g, "");
             this.tempRoom = room;
@@ -442,8 +478,92 @@ export class Client{
                 }
             }
         }
+
+        if(message.toLowerCase().startsWith("wc ")){
+            if(from == this.botMasterId){
+                this.handleUserGreetings(message, room);
+            }
+        }
+
+        if(message.toLowerCase().startsWith("spin ")){
+            if(from == this.botMasterId){
+                this.handleSpin(message, room);
+            }
+        }
+
+
+        if(message.toLowerCase().startsWith("!img ")){
+            let img_query = message.substring(5);
+            (async () => {
+                var links = [];
+                const results = await google.scrape(img_query.trim(), 20);
+                console.log('results', results);
+                results.forEach(element => {
+                    links.push(element.url);    
+                });
+
+                this.sendRoomMsg(room, "", get_random(links));
+              })();
+        }
+
+        if(message.toLowerCase().startsWith("!say ")){
+            let audio_query = message.substring(5);
+            
+                const url = googleTTS.getAudioUrl(audio_query, {
+                    lang: 'en',
+                    slow: false,
+                    host: 'https://translate.google.com',
+                  });
+                  this.sendRoomMsg(room, "", "", url);
+                  console.log(url);
+        }
+
     }
 
+    handleSpin(msg: string, roomName: string){
+        var str = msg.substring(5).toString();
+        var isOnOff = str.replace(/\s/g, "");
+
+        if(isOnOff.toLowerCase() == "on"){
+            if(this.isSpin == true){
+                this.sendRoomMsg(roomName, "SPIN Already Enabled❗");
+                return;
+            }
+            this.isSpin = true;
+            this.sendRoomMsg(roomName, "SPIN Enabled ✅");
+        }else if(isOnOff.toLowerCase() == "off"){
+            if(this.isSpin == false){
+                this.sendRoomMsg(roomName, "SPIN Already Disabled❗");
+                return;
+            }
+            this.isSpin = false;
+            this.sendRoomMsg(roomName, "SPIN Disbaled ✅");
+        }
+        this.spinSettingsMap.set(roomName, this.isSpin);
+    }
+
+    handleUserGreetings(msg: string, roomName: string){
+        var str = msg.substring(3).toString();
+        var isOnOff = str.replace(/\s/g, "");
+
+        if(isOnOff.toLowerCase() == "on"){
+            if(this.isWcGreetings == true){
+                this.sendRoomMsg(roomName, "Greetings Already Enabled❗");
+                return;
+            }
+            this.isWcGreetings = true;
+            //this.wcSettingsMap.set(roomName, this.isWcGreetings);
+            this.sendRoomMsg(roomName, "Greetings Enabled ✅");
+        }else if(isOnOff.toLowerCase() == "off"){
+            if(this.isWcGreetings == false){
+                this.sendRoomMsg(roomName, "Greetings Already Disabled❗");
+                return;
+            }
+            this.isWcGreetings = false;
+            this.sendRoomMsg(roomName, "Greetings Disbaled ✅");
+        }
+        this.wcSettingsMap.set(roomName, this.isWcGreetings);
+    }
 
     fetchUserProfile(targetId, room){
         var userSearchPayload = {handler: HANDLER_PROFILE_OTHER, id: this.keyGen(20, true), type: targetId};
@@ -494,11 +614,14 @@ export class Client{
         return info
     }
 
-    public sendRoomMsg(roomName: string, msg: string, photoUrl?: string){
+    public sendRoomMsg(roomName: string, msg: string, photoUrl?: string, audioUrl?: string){
         let groupMsgPayload = null;
 
         if(photoUrl){
             groupMsgPayload = {handler: HANDLER_ROOM_MESSAGE, id: this.keyGen(20, true), room: roomName, type: MESSAGE_TYPE.IMAGE, url: photoUrl, body: "", length: ""};
+        }
+        else if(audioUrl){
+            groupMsgPayload = {handler: HANDLER_ROOM_MESSAGE, id: this.keyGen(20, true), room: roomName, type: "audio", url: audioUrl, body: "", length: ""};
         }
         else{
             groupMsgPayload = {handler: HANDLER_ROOM_MESSAGE, id: this.keyGen(20, true), room: roomName, type: MESSAGE_TYPE.TEXT, url: "", body: msg, length: ""};
@@ -508,23 +631,25 @@ export class Client{
             this.webSocket.send(JSON.stringify(groupMsgPayload));
         }
     }
+
+    public leaveGroup(roomName: string){
+        let leaveGroupPayload = {handler: HANDLER_ROOM_LEAVE, name: roomName, id: this.keyGen(20, true)}
+        if(this.webSocket != null && this.webSocket.readyState == WebSocket.OPEN){
+            this.webSocket.send(JSON.stringify(leaveGroupPayload));
+        }
+    }
     
+    public sendPvtMsg(targetId: string, msgBody: string){
+        let msgPayload = {handler: HANDLER_CHAT_MESSAGE, id: this.keyGen(20, true), to: targetId, type: MESSAGE_TYPE.TEXT, body: msgBody};
+        if(this.webSocket != null && this.webSocket.readyState == WebSocket.OPEN){
+            this.webSocket.send(JSON.stringify(msgPayload));
+        }
+    }
 }
 
 function get_random (list) {
     return list[Math.floor((Math.random()*list.length))];
 }
 
-function chunkSubstr(str, size) {
-    const numChunks = Math.ceil(str.length / size)
-    const chunks = new Array(numChunks)
-  
-    for (let i = 0, o = 0; i < numChunks; ++i, o += size) {
-      chunks[i] = str.substr(o, size)
-    }
-    //console.log(chunks);
-    return chunks
-  }
-
 // Created by docker aka db~@NC - B'cuz we share :P
-new Client(BOT_ID, BOT_PASSWORD);
+var client = new Client(BOT_ID, BOT_PASSWORD);
