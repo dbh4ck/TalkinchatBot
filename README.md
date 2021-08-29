@@ -20,6 +20,8 @@ A Simple TypeScript to connect TalkinChat Group Bot using WebSocket
 - Send User Profile Image in Group
 - Welcome & Spin Bot
 - Admin, Member, Ban, Owner, None User in Group.
+- Scrape Images from Google
+- Text to Speech Make Bot Talk in Group
 
 
 # List of Cmds:
@@ -33,5 +35,7 @@ A Simple TypeScript to connect TalkinChat Group Bot using WebSocket
 - !yt keyword  -  Find relevant youtube video link
 - !avi userId  -  Fetch User Avatar Pic
 - !pro userId  -  Fetch User Profile
+- !img keyword - Search Image From Google (by default. limited to 20 searches)
+- !say message - Converts the given message to a Speech and send in group
 
 # DB - b'cuz We Share :P
