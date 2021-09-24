@@ -28,6 +28,11 @@ A Simple TypeScript to connect TalkinChat Group Bot using WebSocket
 
 
 # List of Cmds:
+- !image - New Image Search (faster)
+- !w    -  Scrape Weather Data (eg. !w London)
+- !fancy - Fancy text (eg. !fancy docker)
+- !lang - Change Voice (eg. !lang en-US for English & !lang ar for Arabic)
+- !ud  -  Urban Dictionary (eg. !ud docker)
 - .s    -  SPIN the Bot
 - m ID  -  Member ID
 - k ID  -  Kick ID
