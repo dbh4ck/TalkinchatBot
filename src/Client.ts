@@ -1,18 +1,19 @@
 import WebSocket =  require('ws');
 import * as yt from 'youtube-search-without-api-key';
+
 var Scraper = require('images-scraper');
-const request = require('request');
-const cheerio = require('cheerio');
-const fs = require('fs');
+var urban = require('urban');
+let request = require('request');
 const googleTTS = require('google-tts-api');
+const stylish = require('./stylish.js');
+var gis = require('g-i-s');
+
 
 const google = new Scraper({
     puppeteer: {
       headless: false,
     },
   });
-
-const puppeteer = require('puppeteer'); 
 
 const BOT_ID: string = "BOT ID";        // change this
 const BOT_PASSWORD: string = "BOT PWD";     // change this
@@ -65,6 +66,7 @@ export class Client{
         'Can you drive a car? ','You got 🍒 🍰 ','Dont you dare😈 😈','What did you do with my pants?','Staying at home is boring.',
         'You got 🐜','You got 🎀','You won 🏆','You are 🐫', 'Which do you like better, white wine or red wine?','You got 💥','You got 🎉💘'
     ];
+    public sL: string = 'en';
 
     constructor(user: string, pass: string){
         this.userName = user;
@@ -167,7 +169,7 @@ export class Client{
                 let room = parsedData.name;
                 let userName = parsedData.t_username;
                 let newRole = parsedData.new_role;
-                this.sendRoomMsg(room, "✅ " + userName + " is now " + newRole + ".");
+                //this.sendRoomMsg(room, "✅ " + userName + " is now " + newRole + ".");
             }
         }
 
@@ -491,7 +493,7 @@ export class Client{
             }
         }
 
-
+        // Image Search Google
         if(message.toLowerCase().startsWith("!img ")){
             let img_query = message.substring(5);
             (async () => {
@@ -506,11 +508,20 @@ export class Client{
               })();
         }
 
+        // Switch Voice Language
+        if(message.toLowerCase().startsWith("!lang ")){
+            if(from == this.botMasterId){
+                let lang = message.substring(6);
+                this.sL = lang;
+            }
+        }
+
+        // Google Text to Voice
         if(message.toLowerCase().startsWith("!say ")){
             let audio_query = message.substring(5);
             
                 const url = googleTTS.getAudioUrl(audio_query, {
-                    lang: 'en',
+                    lang: this.sL,
                     slow: false,
                     host: 'https://translate.google.com',
                   });
@@ -518,6 +529,94 @@ export class Client{
                   console.log(url);
         }
 
+        // Urban Dictionary
+        if(message.toLowerCase().startsWith("!ud ")){
+            let ud_query = message.substring(4);
+            
+            let trollface = urban(ud_query);
+            var instance = this;
+            trollface.first(function(json) {
+                console.log(json);
+
+                if(json != undefined){
+                    let def = json['definition'];
+                    let word = json['word'];
+                    let example = json['example'];
+
+                    instance.sendRoomMsg(room, "Word: " + word + "\n\n" + "Def.: " + def + "\n"+ "\n\n"+ "Example: " + example);
+                    
+                }else{
+                    instance.sendRoomMsg(room, "No results found for: " + ud_query);
+                }
+            });
+            
+        }
+        
+        // Weather Scrape
+        if(message.toLowerCase().startsWith("!w ")){
+            let query = message.substring(3).replace(/\s/g, "+");
+            let url = "https://api.openweathermap.org/data/2.5/weather?q="+query+"&APPID=b35975e18dc93725acb092f7272cc6b8&units=metric";
+            var instance = this;
+            request(url, function (err, response, body) {
+                if(err){
+                  console.log('error:', err);
+                } else {
+                  let weather = JSON.parse(body);
+                  console.log(weather);
+
+                  if(weather.cod == 200){
+                    let inner = [];
+                    inner = weather.weather;
+                    let message = "🌡️ Temp.: " + weather.main.temp  + " degrees" +  "\n\n"+
+                                  "☁️ Desp.: "+  inner[0].main + " [" + inner[0].description + "]\n\n"+
+                                  "🌁 Humidity: " + weather.main.humidity + "\n\n" + 
+                                  "🚉 Place: " + weather.name + " (" + weather.sys.country+  ")";
+                    instance.sendRoomMsg(room, message);
+                  }else{
+                    instance.sendRoomMsg(room, weather.message);
+                  }
+                }
+              });
+        }
+
+        // Fancy Text 
+        if(message.toLowerCase().startsWith("!fancy ")){
+            var query = message.substring(7).replace(/\s/g, "+");
+
+            //console.log(fancy(query));
+            
+            var x = stylish.forward(query);
+            //console.log(x);
+            if(x != undefined){
+                this.sendRoomMsg(room, x);
+            }
+        }
+        
+
+        // New Image Scrapper Without Browser Opening
+        if(message.toLowerCase().startsWith("!image ")){
+            var query = message.substring(7).replace(/\s/g, "+");
+            instance = this;
+            
+            gis(query, function (error, results) {
+                if (error) {
+                  console.log(error);
+                }
+                else {
+                  let json = JSON.stringify(results, null, '  ');
+                  var s = JSON.parse(json);
+                  let urls = [];
+
+                  s.forEach(element => { 
+                    if(element.url.endsWith(".jpg") || element.url.endsWith(".jpeg") || element.url.endsWith(".png")){
+                        urls.push(element.url);
+                    }
+                  });
+                  //console.log(urls);
+                  instance.sendRoomMsg(room, "", get_random(urls), "");
+                }
+            });             
+        }
     }
 
     handleSpin(msg: string, roomName: string){
