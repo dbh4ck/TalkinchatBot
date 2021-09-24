@@ -1,7 +1,7 @@
 # TalkinchatBot
 A Simple TypeScript to connect TalkinChat Group Bot using WebSocket
 
-# Make Sure to RUN: "npm install" in project room directory in order to refresh packages required to run the bot.
+# Make Sure to RUN: "npm install" in project root directory in order to refresh packages required to run the bot.
 
 - RUN Cmds: Please define the username and password for the bot in Client.ts file and execute below cmds step-wise: 
 - tsc Client.ts
